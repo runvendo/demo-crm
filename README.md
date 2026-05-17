@@ -2,6 +2,9 @@
 
 A simple CRM used to demonstrate the AI Customization Platform.
 
+Canonical source lives at https://github.com/runvendo/demo-crm. The
+Vendo platform fetches updates from this repo via the P6 update-watcher.
+
 ## What this is
 
 A vanilla Next.js CRM app (deals, contacts, pipeline) with **zero customization code**. The only trace of the platform is one script tag in `src/app/layout.tsx`:
