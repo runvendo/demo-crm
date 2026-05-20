@@ -1,0 +1,75 @@
+name: Build demo-crm image
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: tags
+        run: |
+          VERSION=$(cat VERSION)
+          TAGS="ghcr.io/runvendo/demo-crm:${VERSION}"
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            TAGS="$TAGS,ghcr.io/runvendo/demo-crm:latest"
+          fi
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            TAG_NAME=${GITHUB_REF#refs/tags/}
+            TAGS="$TAGS,ghcr.io/runvendo/demo-crm:${TAG_NAME}"
+          fi
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.tags.outputs.tags }}
+          platforms: linux/amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke (boot + /health)
+        if: github.event_name != 'pull_request'
+        run: |
+          VERSION=$(cat VERSION)
+          IMAGE="ghcr.io/runvendo/demo-crm:${VERSION}"
+          docker run -d --name demo-crm -p 3000:3000 \
+            -e DATABASE_URL="postgresql://invalid/test" \
+            -e NODE_ENV=production \
+            "$IMAGE"
+          # /health returns {"status":"ok"} unconditionally — no DB hit.
+          for i in {1..45}; do
+            if curl -fsS http://127.0.0.1:3000/health >/dev/null 2>&1; then
+              echo "Health check up after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:3000/health | grep -q "ok" \
+            || (echo "/health failed"; docker logs demo-crm; exit 1)
+          echo "--- last 50 lines of container logs ---"
+          docker logs demo-crm 2>&1 | tail -50
+          docker rm -f demo-crm
