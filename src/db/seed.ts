@@ -1,5 +1,36 @@
+import { sql } from "drizzle-orm";
 import { db } from "./index";
 import { deals, contacts } from "./schema";
+
+// Drizzle migrations aren't run in this image (no `drizzle/` folder ships in
+// the Next.js standalone output), so seed() creates the tables on first call.
+// Idempotent: re-running just clears + reseeds data.
+async function ensureSchema() {
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS deals (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      name text NOT NULL,
+      value integer NOT NULL,
+      status varchar(10) NOT NULL DEFAULT 'open',
+      customer_name text NOT NULL,
+      customer_email text NOT NULL,
+      notes text,
+      created_at timestamp NOT NULL DEFAULT now(),
+      updated_at timestamp NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS contacts (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      name text NOT NULL,
+      email text NOT NULL,
+      phone text,
+      company text,
+      role text,
+      created_at timestamp NOT NULL DEFAULT now()
+    )
+  `);
+}
 
 const sampleDeals = [
   {
@@ -83,6 +114,7 @@ const sampleContacts = [
 ];
 
 export async function seed() {
+  await ensureSchema();
   await db.delete(deals);
   await db.delete(contacts);
   await db.insert(deals).values(sampleDeals);
